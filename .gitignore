@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+internal/auto_login_mode.txt
+*.log
