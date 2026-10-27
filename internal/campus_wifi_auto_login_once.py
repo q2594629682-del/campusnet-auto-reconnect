@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 import html
 import time
@@ -178,14 +179,14 @@ def any_network_connected() -> bool:
     if code == 0:
         for line in out.splitlines():
             low = line.lower()
-            if "connected" in low or "已连接" in line:
-            logging.info("An existing network is connected; leaving it unchanged.")
+            if (re.search(r"\bconnected\b", low) and "not connected" not in low) or "已连接" in line:
+                logging.info("An existing network is connected; leaving it unchanged.")
                 return True
 
     # 兼容部分中文 Windows 输出
     info = get_wlan_info()
     state = info.get("state", "")
-    if "已连接" in state or "connected" in state.lower():
+    if "已连接" in state or state.strip().lower() == "connected":
         logging.info("An existing Wi-Fi connection is active; leaving it unchanged.")
         return True
 
@@ -329,15 +330,14 @@ def connect_wifi() -> bool:
 
 def get_current_ipv4_for_portal() -> str | None:
     try:
-    host = urllib.parse.urlparse(PORTAL_URL).hostname
-    if not host:
-        logging.error("Set CAMPUS_WIFI_PORTAL_URL to your campus captive-portal URL.")
-        return None
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.settimeout(3)
-        s.connect((host, 80))
-        ip = s.getsockname()[0]
-        s.close()
+        host = urllib.parse.urlparse(PORTAL_URL).hostname
+        if not host:
+            logging.error("Set CAMPUS_WIFI_PORTAL_URL to your campus captive-portal URL.")
+            return None
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.settimeout(3)
+            s.connect((host, 80))
+            ip = s.getsockname()[0]
         logging.info("当前本机 IPv4：%s", ip)
         return ip
     except Exception as e:
@@ -346,12 +346,15 @@ def get_current_ipv4_for_portal() -> str | None:
 
 
 def build_portal_url() -> str:
+    parsed = urllib.parse.urlparse(PORTAL_URL)
+    query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+    if "wlanuserip" not in query:
+        return PORTAL_URL
+
     ip = get_current_ipv4_for_portal()
     if not ip:
         return PORTAL_URL
 
-    parsed = urllib.parse.urlparse(PORTAL_URL)
-    query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
     query["wlanuserip"] = [ip]
 
     new_query = urllib.parse.urlencode(query, doseq=True)
